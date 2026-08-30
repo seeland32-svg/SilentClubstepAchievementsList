@@ -15,7 +15,7 @@
     GitHub Pages is a static website.
 */
 
-const ADMIN_PASSCODE = "daghan300412";
+const ADMIN_PASSCODE = "ifyousawthisfuckyou";
 
 
 /* =========================================================
