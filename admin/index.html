@@ -1,1 +1,1737 @@
+/* =========================================================
+   SILENT CLUBSTEP LEVELS LIST
+   ADMIN PANEL
+========================================================= */
 
+/*
+    IMPORTANT:
+    This is a frontend admin panel.
+
+    Change this before using it:
+
+    const ADMIN_PASSCODE = "YOUR_PASSWORD";
+
+    This login is NOT real server-side security because
+    GitHub Pages is a static website.
+*/
+
+const ADMIN_PASSCODE = "CHANGE_THIS_PASSCODE";
+
+
+/* =========================================================
+   STATE
+========================================================= */
+
+let levels = [];
+let records = [];
+
+let originalLevelsWrapper = null;
+let originalRecordsWrapper = null;
+
+let levelsFileName = "levels.json";
+let recordsFileName = "records.json";
+
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function $(id) {
+    return document.getElementById(id);
+}
+
+
+function escapeHTML(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+
+function downloadJSON(filename, data) {
+
+    const blob = new Blob(
+        [
+            JSON.stringify(
+                data,
+                null,
+                4
+            )
+        ],
+        {
+            type: "application/json"
+        }
+    );
+
+    const url =
+        URL.createObjectURL(blob);
+
+    const link =
+        document.createElement("a");
+
+    link.href = url;
+    link.download = filename;
+
+    document.body.appendChild(link);
+
+    link.click();
+
+    link.remove();
+
+    URL.revokeObjectURL(url);
+}
+
+
+function generateId() {
+
+    return (
+        Date.now().toString(36) +
+        Math.random()
+            .toString(36)
+            .substring(2, 8)
+    );
+}
+
+
+/* =========================================================
+   LOGIN
+========================================================= */
+
+const loginScreen =
+    $("loginScreen");
+
+const adminPanel =
+    $("adminPanel");
+
+const loginForm =
+    $("loginForm");
+
+const passwordInput =
+    $("passwordInput");
+
+const loginError =
+    $("loginError");
+
+
+loginForm.addEventListener(
+    "submit",
+    function (event) {
+
+        event.preventDefault();
+
+        if (
+            passwordInput.value ===
+            ADMIN_PASSCODE
+        ) {
+
+            sessionStorage.setItem(
+                "silentClubstepAdmin",
+                "true"
+            );
+
+            loginScreen.classList.add(
+                "hidden"
+            );
+
+            adminPanel.classList.remove(
+                "hidden"
+            );
+
+            passwordInput.value = "";
+
+            updateEverything();
+
+        } else {
+
+            loginError.textContent =
+                "Incorrect passcode.";
+
+            passwordInput.value = "";
+
+        }
+    }
+);
+
+
+/* Restore login */
+
+if (
+    sessionStorage.getItem(
+        "silentClubstepAdmin"
+    ) === "true"
+) {
+
+    loginScreen.classList.add(
+        "hidden"
+    );
+
+    adminPanel.classList.remove(
+        "hidden"
+    );
+
+}
+
+
+/* =========================================================
+   LOGOUT
+========================================================= */
+
+$("logoutButton").addEventListener(
+    "click",
+    function () {
+
+        sessionStorage.removeItem(
+            "silentClubstepAdmin"
+        );
+
+        adminPanel.classList.add(
+            "hidden"
+        );
+
+        loginScreen.classList.remove(
+            "hidden"
+        );
+
+    }
+);
+
+
+/* =========================================================
+   NAVIGATION
+========================================================= */
+
+const navButtons =
+    document.querySelectorAll(
+        ".nav-button"
+    );
+
+const pages =
+    document.querySelectorAll(
+        ".page"
+    );
+
+
+navButtons.forEach(
+    button => {
+
+        button.addEventListener(
+            "click",
+            function () {
+
+                const page =
+                    button.dataset.page;
+
+                navButtons.forEach(
+                    b =>
+                        b.classList.remove(
+                            "active"
+                        )
+                );
+
+                button.classList.add(
+                    "active"
+                );
+
+                pages.forEach(
+                    p =>
+                        p.classList.remove(
+                            "active-page"
+                        )
+                );
+
+                const target =
+                    $(page + "Page");
+
+                if (target) {
+                    target.classList.add(
+                        "active-page"
+                    );
+                }
+
+            }
+        );
+
+    }
+);
+
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
+
+function updateDashboard() {
+
+    $("levelCount").textContent =
+        levels.length;
+
+    $("recordCount").textContent =
+        records.length;
+
+    $("mobileCount").textContent =
+        records.filter(
+            record =>
+                record.mobile === true
+        ).length;
+}
+
+
+/* =========================================================
+   NORMALIZE LEVEL
+========================================================= */
+
+function normalizeLevel(level, index) {
+
+    if (
+        typeof level !== "object" ||
+        level === null
+    ) {
+
+        return {
+            _adminId: generateId(),
+            name: String(level),
+            position: index + 1
+        };
+
+    }
+
+    return {
+        _adminId:
+            level._adminId ||
+            generateId(),
+
+        ...level
+    };
+}
+
+
+/* =========================================================
+   NORMALIZE RECORD
+========================================================= */
+
+function normalizeRecord(record) {
+
+    if (
+        typeof record !== "object" ||
+        record === null
+    ) {
+
+        return {
+            _adminId: generateId(),
+            name: String(record),
+            percent: 100
+        };
+
+    }
+
+    return {
+        _adminId:
+            record._adminId ||
+            generateId(),
+
+        ...record
+    };
+}
+
+
+/* =========================================================
+   IMPORT LEVEL JSON
+========================================================= */
+
+$("importLevels").addEventListener(
+    "change",
+    function (event) {
+
+        const file =
+            event.target.files[0];
+
+        if (!file) return;
+
+        levelsFileName =
+            file.name;
+
+        const reader =
+            new FileReader();
+
+        reader.onload =
+            function () {
+
+                try {
+
+                    const parsed =
+                        JSON.parse(
+                            reader.result
+                        );
+
+                    originalLevelsWrapper =
+                        parsed;
+
+                    levels =
+                        extractArray(
+                            parsed
+                        ).map(
+                            normalizeLevel
+                        );
+
+                    updateEverything();
+
+                    alert(
+                        `Imported ${levels.length} levels.`
+                    );
+
+                } catch (error) {
+
+                    alert(
+                        "Could not read the levels JSON."
+                    );
+
+                    console.error(error);
+
+                }
+
+            };
+
+        reader.readAsText(file);
+
+    }
+);
+
+
+/* =========================================================
+   IMPORT RECORD JSON
+========================================================= */
+
+$("importRecords").addEventListener(
+    "change",
+    function (event) {
+
+        const file =
+            event.target.files[0];
+
+        if (!file) return;
+
+        recordsFileName =
+            file.name;
+
+        const reader =
+            new FileReader();
+
+        reader.onload =
+            function () {
+
+                try {
+
+                    const parsed =
+                        JSON.parse(
+                            reader.result
+                        );
+
+                    originalRecordsWrapper =
+                        parsed;
+
+                    records =
+                        extractArray(
+                            parsed
+                        ).map(
+                            normalizeRecord
+                        );
+
+                    updateEverything();
+
+                    alert(
+                        `Imported ${records.length} records.`
+                    );
+
+                } catch (error) {
+
+                    alert(
+                        "Could not read the records JSON."
+                    );
+
+                    console.error(error);
+
+                }
+
+            };
+
+        reader.readAsText(file);
+
+    }
+);
+
+
+/* =========================================================
+   FIND ARRAY IN JSON
+========================================================= */
+
+function extractArray(data) {
+
+    if (Array.isArray(data)) {
+        return data;
+    }
+
+    if (
+        data &&
+        Array.isArray(data.levels)
+    ) {
+        return data.levels;
+    }
+
+    if (
+        data &&
+        Array.isArray(data.records)
+    ) {
+        return data.records;
+    }
+
+    if (
+        data &&
+        Array.isArray(data.data)
+    ) {
+        return data.data;
+    }
+
+    /*
+        If the imported JSON is an object whose
+        values contain arrays, use the first one.
+    */
+
+    if (
+        data &&
+        typeof data === "object"
+    ) {
+
+        for (
+            const key of Object.keys(data)
+        ) {
+
+            if (
+                Array.isArray(
+                    data[key]
+                )
+            ) {
+
+                return data[key];
+
+            }
+
+        }
+
+    }
+
+    return [];
+}
+
+
+/* =========================================================
+   LEVELS
+========================================================= */
+
+function renderLevels() {
+
+    const container =
+        $("levelsList");
+
+    const search =
+        $("levelSearch")
+            .value
+            .toLowerCase()
+            .trim();
+
+    let visible =
+        levels.filter(
+            level =>
+                JSON.stringify(level)
+                    .toLowerCase()
+                    .includes(search)
+        );
+
+
+    visible.sort(
+        (a, b) =>
+            Number(
+                a.position ?? 999999
+            ) -
+            Number(
+                b.position ?? 999999
+            )
+    );
+
+
+    if (!visible.length) {
+
+        container.innerHTML = `
+            <div class="data-card">
+                <h2>No levels</h2>
+                <p>
+                    Import your levels JSON or add
+                    your first level.
+                </p>
+            </div>
+        `;
+
+        return;
+    }
+
+
+    container.innerHTML =
+        visible.map(
+            level => {
+
+                const realIndex =
+                    levels.indexOf(level);
+
+                const name =
+                    level.name ??
+                    level.levelName ??
+                    "Unnamed Level";
+
+                const position =
+                    level.position ??
+                    realIndex + 1;
+
+                const verifier =
+                    level.verifier ??
+                    level.verifierName ??
+                    "Unknown";
+
+                const id =
+                    level.id ??
+                    level.levelId ??
+                    "—";
+
+                const thumbnail =
+                    level.thumbnail ??
+                    level.image ??
+                    level.imageUrl ??
+                    "";
+
+
+                return `
+                    <div class="list-item">
+
+                        <div class="position-badge">
+                            ${escapeHTML(position)}
+                        </div>
+
+                        ${
+                            thumbnail
+                            ?
+                            `
+                            <img
+                                class="item-thumbnail"
+                                src="${escapeHTML(thumbnail)}"
+                                alt=""
+                                onerror="this.style.display='none'"
+                            >
+                            `
+                            :
+                            ""
+                        }
+
+                        <div class="item-info">
+
+                            <h3 class="item-title">
+                                ${escapeHTML(name)}
+                            </h3>
+
+                            <div class="item-meta">
+                                ID: ${escapeHTML(id)}
+                                · Verifier:
+                                ${escapeHTML(verifier)}
+                            </div>
+
+                        </div>
+
+                        <div class="item-actions">
+
+                            <button
+                                class="move-button"
+                                onclick="moveLevel(${realIndex}, -1)"
+                                title="Move up"
+                            >
+                                ▲
+                            </button>
+
+                            <button
+                                class="move-button"
+                                onclick="moveLevel(${realIndex}, 1)"
+                                title="Move down"
+                            >
+                                ▼
+                            </button>
+
+                            <button
+                                class="edit-button"
+                                onclick="editLevel(${realIndex})"
+                            >
+                                Edit
+                            </button>
+
+                            <button
+                                class="delete-button"
+                                onclick="deleteLevel(${realIndex})"
+                            >
+                                Delete
+                            </button>
+
+                        </div>
+
+                    </div>
+                `;
+
+            }
+        )
+        .join("");
+}
+
+
+/* =========================================================
+   ADD LEVEL
+========================================================= */
+
+function openLevelModal(index = null) {
+
+    $("levelForm").reset();
+
+    $("editingLevelIndex").value =
+        index === null
+        ? ""
+        : index;
+
+
+    $("levelModalTitle").textContent =
+        index === null
+        ? "Add Level"
+        : "Edit Level";
+
+
+    if (index !== null) {
+
+        const level =
+            levels[index];
+
+        $("levelName").value =
+            level.name ??
+            level.levelName ??
+            "";
+
+        $("levelPosition").value =
+            level.position ??
+            index + 1;
+
+        $("levelId").value =
+            level.levelId ??
+            level.id ??
+            "";
+
+        $("levelVerifier").value =
+            level.verifier ??
+            level.verifierName ??
+            "";
+
+        $("levelThumbnail").value =
+            level.thumbnail ??
+            level.image ??
+            level.imageUrl ??
+            "";
+
+        $("levelVideo").value =
+            level.video ??
+            level.videoUrl ??
+            level.showcase ??
+            "";
+
+        $("levelDescription").value =
+            level.description ??
+            "";
+
+    } else {
+
+        $("levelPosition").value =
+            levels.length + 1;
+
+    }
+
+
+    $("levelModal")
+        .classList.remove(
+            "hidden"
+        );
+}
+
+
+$("addLevelButton").addEventListener(
+    "click",
+    () => openLevelModal()
+);
+
+
+$("quickAddLevel").addEventListener(
+    "click",
+    function () {
+
+        showPage("levels");
+
+        openLevelModal();
+
+    }
+);
+
+
+/* =========================================================
+   EDIT LEVEL
+========================================================= */
+
+function editLevel(index) {
+
+    openLevelModal(index);
+
+}
+
+
+/* =========================================================
+   SAVE LEVEL
+========================================================= */
+
+$("levelForm").addEventListener(
+    "submit",
+    function (event) {
+
+        event.preventDefault();
+
+        const editing =
+            $("editingLevelIndex").value;
+
+
+        const level = {
+
+            name:
+                $("levelName").value.trim(),
+
+            position:
+                Number(
+                    $("levelPosition").value
+                ),
+
+            levelId:
+                $("levelId").value.trim(),
+
+            verifier:
+                $("levelVerifier").value.trim(),
+
+            thumbnail:
+                $("levelThumbnail").value.trim(),
+
+            videoUrl:
+                $("levelVideo").value.trim(),
+
+            description:
+                $("levelDescription").value.trim()
+
+        };
+
+
+        if (editing === "") {
+
+            level._adminId =
+                generateId();
+
+            levels.push(level);
+
+        } else {
+
+            const index =
+                Number(editing);
+
+            const old =
+                levels[index];
+
+            levels[index] = {
+
+                ...old,
+                ...level
+
+            };
+
+        }
+
+
+        closeModal("levelModal");
+
+        updateEverything();
+
+    }
+);
+
+
+/* =========================================================
+   DELETE LEVEL
+========================================================= */
+
+function deleteLevel(index) {
+
+    const level =
+        levels[index];
+
+    const name =
+        level.name ??
+        level.levelName ??
+        "this level";
+
+
+    if (
+        !confirm(
+            `Delete "${name}"?`
+        )
+    ) {
+        return;
+    }
+
+
+    levels.splice(
+        index,
+        1
+    );
+
+
+    /*
+        Re-number positions.
+    */
+
+    levels.forEach(
+        (level, i) => {
+
+            level.position =
+                i + 1;
+
+        }
+    );
+
+
+    updateEverything();
+
+}
+
+
+/* =========================================================
+   MOVE LEVEL
+========================================================= */
+
+function moveLevel(index, direction) {
+
+    const newIndex =
+        index + direction;
+
+    if (
+        newIndex < 0 ||
+        newIndex >= levels.length
+    ) {
+        return;
+    }
+
+
+    [
+        levels[index],
+        levels[newIndex]
+    ] =
+    [
+        levels[newIndex],
+        levels[index]
+    ];
+
+
+    levels.forEach(
+        (level, i) => {
+
+            level.position =
+                i + 1;
+
+        }
+    );
+
+
+    updateEverything();
+
+}
+
+
+/* =========================================================
+   LEVEL SEARCH
+========================================================= */
+
+$("levelSearch").addEventListener(
+    "input",
+    renderLevels
+);
+
+
+/* =========================================================
+   SORT LEVELS
+========================================================= */
+
+$("sortLevelsButton").addEventListener(
+    "click",
+    function () {
+
+        levels.sort(
+            (a, b) =>
+                Number(
+                    a.position ?? 999999
+                ) -
+                Number(
+                    b.position ?? 999999
+                )
+        );
+
+        levels.forEach(
+            (level, index) => {
+
+                level.position =
+                    index + 1;
+
+            }
+        );
+
+        updateEverything();
+
+    }
+);
+
+
+/* =========================================================
+   RECORDS
+========================================================= */
+
+function renderRecords() {
+
+    const container =
+        $("recordsList");
+
+    const search =
+        $("recordSearch")
+            .value
+            .toLowerCase()
+            .trim();
+
+
+    const visible =
+        records.filter(
+            record =>
+                JSON.stringify(record)
+                    .toLowerCase()
+                    .includes(search)
+        );
+
+
+    if (!visible.length) {
+
+        container.innerHTML = `
+            <div class="data-card">
+
+                <h2>No records</h2>
+
+                <p>
+                    Import your records JSON or add
+                    your first record.
+                </p>
+
+            </div>
+        `;
+
+        return;
+    }
+
+
+    container.innerHTML =
+        visible.map(
+            record => {
+
+                const index =
+                    records.indexOf(record);
+
+                const player =
+                    record.player ??
+                    record.name ??
+                    record.username ??
+                    record.victorName ??
+                    "Unknown";
+
+                const percent =
+                    record.percent ??
+                    record.percentage ??
+                    record.progress ??
+                    100;
+
+                const level =
+                    record.level ??
+                    record.levelName ??
+                    "Unknown level";
+
+                const mobile =
+                    record.mobile === true;
+
+
+                return `
+                    <div class="list-item">
+
+                        <div class="position-badge">
+                            ${escapeHTML(percent)}%
+                        </div>
+
+                        <div class="item-info">
+
+                            <h3 class="item-title">
+                                ${escapeHTML(player)}
+                            </h3>
+
+                            <div class="item-meta">
+
+                                ${escapeHTML(level)}
+
+                                ${
+                                    mobile
+                                    ?
+                                    " · 📱 Mobile"
+                                    :
+                                    ""
+                                }
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="item-actions">
+
+                            <button
+                                class="edit-button"
+                                onclick="editRecord(${index})"
+                            >
+                                Edit
+                            </button>
+
+                            <button
+                                class="delete-button"
+                                onclick="deleteRecord(${index})"
+                            >
+                                Delete
+                            </button>
+
+                        </div>
+
+                    </div>
+                `;
+
+            }
+        )
+        .join("");
+}
+
+
+/* =========================================================
+   RECORD LEVEL DROPDOWN
+========================================================= */
+
+function updateRecordLevelDropdown() {
+
+    const select =
+        $("recordLevel");
+
+    select.innerHTML =
+        `<option value="">
+            Select a level
+        </option>`;
+
+
+    levels.forEach(
+        (level, index) => {
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+            option.value =
+                index;
+
+            option.textContent =
+                `${
+                    level.position ??
+                    index + 1
+                }. ${
+                    level.name ??
+                    level.levelName ??
+                    "Unnamed"
+                }`;
+
+            select.appendChild(
+                option
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   ADD RECORD
+========================================================= */
+
+function openRecordModal(index = null) {
+
+    $("recordForm").reset();
+
+    $("recordProgress").value =
+        100;
+
+    $("editingRecordIndex").value =
+        index === null
+        ? ""
+        : index;
+
+
+    $("recordModalTitle").textContent =
+        index === null
+        ? "Add Record"
+        : "Edit Record";
+
+
+    updateRecordLevelDropdown();
+
+
+    if (index !== null) {
+
+        const record =
+            records[index];
+
+        $("recordPlayer").value =
+            record.player ??
+            record.name ??
+            record.username ??
+            record.victorName ??
+            "";
+
+        $("recordProgress").value =
+            record.percent ??
+            record.percentage ??
+            record.progress ??
+            100;
+
+        $("recordVideo").value =
+            record.videoUrl ??
+            record.video ??
+            "";
+
+        $("recordMobile").checked =
+            record.mobile === true;
+
+
+        const levelName =
+            record.levelName ??
+            record.level ??
+            "";
+
+
+        const levelIndex =
+            levels.findIndex(
+                level =>
+                    (
+                        level.name ??
+                        level.levelName
+                    ) === levelName
+            );
+
+
+        if (levelIndex >= 0) {
+
+            $("recordLevel").value =
+                levelIndex;
+
+        }
+
+    }
+
+
+    $("recordModal")
+        .classList.remove(
+            "hidden"
+        );
+}
+
+
+$("addRecordButton").addEventListener(
+    "click",
+    () => openRecordModal()
+);
+
+
+$("quickAddRecord").addEventListener(
+    "click",
+    function () {
+
+        showPage("records");
+
+        openRecordModal();
+
+    }
+);
+
+
+/* =========================================================
+   EDIT RECORD
+========================================================= */
+
+function editRecord(index) {
+
+    openRecordModal(index);
+
+}
+
+
+/* =========================================================
+   SAVE RECORD
+========================================================= */
+
+$("recordForm").addEventListener(
+    "submit",
+    function (event) {
+
+        event.preventDefault();
+
+
+        const editing =
+            $("editingRecordIndex").value;
+
+
+        const selectedLevelIndex =
+            $("recordLevel").value;
+
+
+        const selectedLevel =
+            levels[
+                Number(
+                    selectedLevelIndex
+                )
+            ];
+
+
+        const record = {
+
+            player:
+                $("recordPlayer")
+                    .value
+                    .trim(),
+
+            level:
+                selectedLevel
+                ?
+                (
+                    selectedLevel.name ??
+                    selectedLevel.levelName ??
+                    ""
+                )
+                :
+                "",
+
+            percent:
+                Number(
+                    $("recordProgress").value
+                ),
+
+            videoUrl:
+                $("recordVideo")
+                    .value
+                    .trim(),
+
+            mobile:
+                $("recordMobile")
+                    .checked
+
+        };
+
+
+        if (editing === "") {
+
+            record._adminId =
+                generateId();
+
+            records.push(
+                record
+            );
+
+        } else {
+
+            const index =
+                Number(editing);
+
+            const old =
+                records[index];
+
+            records[index] = {
+
+                ...old,
+                ...record
+
+            };
+
+        }
+
+
+        closeModal("recordModal");
+
+        updateEverything();
+
+    }
+);
+
+
+/* =========================================================
+   DELETE RECORD
+========================================================= */
+
+function deleteRecord(index) {
+
+    const record =
+        records[index];
+
+    const player =
+        record.player ??
+        record.name ??
+        record.username ??
+        record.victorName ??
+        "this record";
+
+
+    if (
+        !confirm(
+            `Delete the record for "${player}"?`
+        )
+    ) {
+        return;
+    }
+
+
+    records.splice(
+        index,
+        1
+    );
+
+
+    updateEverything();
+
+}
+
+
+/* =========================================================
+   RECORD SEARCH
+========================================================= */
+
+$("recordSearch").addEventListener(
+    "input",
+    renderRecords
+);
+
+
+/* =========================================================
+   EXPORT LEVELS
+========================================================= */
+
+$("exportLevels").addEventListener(
+    "click",
+    function () {
+
+        const output =
+            buildExportData(
+                levels,
+                originalLevelsWrapper,
+                "levels"
+            );
+
+
+        downloadJSON(
+            levelsFileName,
+            output
+        );
+
+    }
+);
+
+
+/* =========================================================
+   EXPORT RECORDS
+========================================================= */
+
+$("exportRecords").addEventListener(
+    "click",
+    function () {
+
+        const output =
+            buildExportData(
+                records,
+                originalRecordsWrapper,
+                "records"
+            );
+
+
+        downloadJSON(
+            recordsFileName,
+            output
+        );
+
+    }
+);
+
+
+/* =========================================================
+   QUICK EXPORT
+========================================================= */
+
+$("quickExport").addEventListener(
+    "click",
+    function () {
+
+        showPage("data");
+
+    }
+);
+
+
+/* =========================================================
+   BUILD EXPORT
+========================================================= */
+
+function buildExportData(
+    array,
+    original,
+    type
+) {
+
+    /*
+        If the imported JSON was simply an array,
+        export an array.
+
+        If it had a "levels", "records", or "data"
+        property, preserve that wrapper.
+    */
+
+    if (
+        Array.isArray(original)
+    ) {
+
+        return cleanAdminFields(
+            array
+        );
+
+    }
+
+
+    if (
+        original &&
+        Array.isArray(
+            original[type]
+        )
+    ) {
+
+        return {
+            ...original,
+
+            [type]:
+                cleanAdminFields(
+                    array
+                )
+        };
+
+    }
+
+
+    if (
+        original &&
+        Array.isArray(
+            original.data
+        )
+    ) {
+
+        return {
+            ...original,
+
+            data:
+                cleanAdminFields(
+                    array
+                )
+        };
+
+    }
+
+
+    return cleanAdminFields(
+        array
+    );
+}
+
+
+/* =========================================================
+   REMOVE INTERNAL ADMIN DATA
+========================================================= */
+
+function cleanAdminFields(data) {
+
+    return JSON.parse(
+        JSON.stringify(
+            data,
+            function (key, value) {
+
+                if (
+                    key === "_adminId"
+                ) {
+                    return undefined;
+                }
+
+                return value;
+
+            }
+        )
+    );
+
+}
+
+
+/* =========================================================
+   MODALS
+========================================================= */
+
+function closeModal(id) {
+
+    const modal =
+        $(id);
+
+    if (modal) {
+
+        modal.classList.add(
+            "hidden"
+        );
+
+    }
+
+}
+
+
+document
+    .querySelectorAll(
+        "[data-close]"
+    )
+    .forEach(
+        button => {
+
+            button.addEventListener(
+                "click",
+                function () {
+
+                    closeModal(
+                        button.dataset.close
+                    );
+
+                }
+            );
+
+        }
+    );
+
+
+document
+    .querySelectorAll(
+        ".modal"
+    )
+    .forEach(
+        modal => {
+
+            modal.addEventListener(
+                "click",
+                function (event) {
+
+                    if (
+                        event.target === modal
+                    ) {
+
+                        modal.classList.add(
+                            "hidden"
+                        );
+
+                    }
+
+                }
+            );
+
+        }
+    );
+
+
+/* =========================================================
+   SHOW PAGE
+========================================================= */
+
+function showPage(pageName) {
+
+    navButtons.forEach(
+        button => {
+
+            button.classList.toggle(
+                "active",
+                button.dataset.page ===
+                pageName
+            );
+
+        }
+    );
+
+
+    pages.forEach(
+        page => {
+
+            page.classList.remove(
+                "active-page"
+            );
+
+        }
+    );
+
+
+    const page =
+        $(pageName + "Page");
+
+    if (page) {
+
+        page.classList.add(
+            "active-page"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   UPDATE EVERYTHING
+========================================================= */
+
+function updateEverything() {
+
+    updateDashboard();
+
+    renderLevels();
+
+    renderRecords();
+
+    updateRecordLevelDropdown();
+
+}
+
+
+/* =========================================================
+   START
+========================================================= */
+
+updateEverything();
