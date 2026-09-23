@@ -86,7 +86,7 @@ export default {
                         <p class="error" v-for="error of errors">{{ error }}</p>
                     </div>
                     <div class="og">
-                        <p class="type-label-md">There is also <a href="https://demonlist.org/custom-list/18337" target="_blank">TheShittyList</a></p>
+                        <p class="type-label-md">There is also <a href="https://demonlist.org/custom-list/18337" target="_blank">Silent Clubstep Impossible List</a></p>
                     </div>
                     <template v-if="editors">
                         <h3>List Editors</h3>
